@@ -1,0 +1,39 @@
+// @flow
+import * as Types from './types.js'
+import Client from './client.js'
+
+export default class {{ service.name }} {
+  client: Client;
+
+  constructor(client: Client) {
+    this.client = client;
+  }
+
+{% for method in service.methods %}
+  async {{ method.name }}(
+{% for parameter in method.parameters %}
+      {{ parameter.name }}: {{ parameter.convertedType }}{% if loop.last %}{% else %},{% endif %}
+
+{% endfor %}
+  ) {
+    return await this.client.fetch("{{ service.path + method.path }}",
+        "{{ method.method }}", {
+{% for parameter in method.pathParameters %}
+          "{{ parameter.name }}": {{ parameter.name }}{% if loop.last %}{% else %},{% endif %}
+
+{% endfor %}
+        }, {
+{% for parameter in method.headerParameters %}
+          "{{ parameter.name }}": {{ parameter.name }}{% if loop.last %}{% else %},{% endif %}
+
+{% endfor %}
+        }, {
+{% for parameter in method.queryParameters %}
+          "{{ parameter.name }}": {{ parameter.name }}{% if loop.last %}{% else %},{% endif %}
+
+{% endfor %}
+        }, {{ method.bodyParameter.name }});
+  }
+
+{% endfor %}
+}

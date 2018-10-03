@@ -1,0 +1,56 @@
+// @flow
+export default class ServiceClient {
+  baseUrl: string = "asdf";
+  headers: { [string]: string } = {};
+  onError: (r: Response) => Error = (r) => Error("error");
+
+  async fetch<R>(url: string,
+      method: string,
+      pathParameters: { [string]: any },
+      headerParameters: { [string]: any },
+      requestParameters: { [string]: any },
+      requestPayload: any): Promise<R|Error> {
+    const urlWithBase = this.baseUrl + url;
+    const urlWithPathVariables = this.replacePathVariables(urlWithBase,
+        pathParameters);
+    const urlWithParameters = this.appendQueryParameters(urlWithPathVariables,
+        requestParameters);
+    if(!headerParameters) headerParameters = {};
+    headerParameters["Content-Type"] = "application/json"
+    const response = await fetch(urlWithParameters, {
+      headers: headerParameters,
+      method: method,
+      body: JSON.stringify(requestPayload)
+    });
+    if (response.ok) {
+      let json = await response.json();
+      return (json: R);
+    } else {
+      return this.onError(response);
+    }
+  }
+
+  replacePathVariables(url: string, pathVariables: { [string]: any }) {
+    for (const pathVariable in pathVariables) {
+      url = url.replace(new RegExp("{" + pathVariable + "}", "g"),
+          pathVariables[pathVariable]);
+    }
+    return url;
+  }
+
+  appendQueryParameters(url: string, queryParameters: { [string]: any }) {
+    let hasQ = url.indexOf('?') !== -1;
+    for (const queryParameter in queryParameters) {
+      if (!hasQ) {
+        url += '?';
+        hasQ = true;
+      } else {
+        url += '&';
+      }
+      url += encodeURIComponent(queryParameter);
+      url += "=";
+      url += encodeURIComponent(queryParameters[queryParameter]);
+    }
+    return url;
+  }
+}

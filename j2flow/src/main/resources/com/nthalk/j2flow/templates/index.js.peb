@@ -1,0 +1,24 @@
+// @flow
+import * as Types from './types';
+import Client from '../client';
+{% for service in services %}
+import {{ service.name }} from './{{ service.name }}';
+{% endfor %}
+
+export default new class Services {
+  client: Client;
+{% for service in services %}
+  {{ service.name }}: {{ service.name }};
+{% endfor %}
+  Types = Types;
+
+  constructor(client?: Client) {
+    if (client == null) {
+      client = new Client();
+    }
+    this.client = client;
+{% for service in services %}
+    this.{{ service.name }} = new {{ service.name }}(client);
+{% endfor %}
+  }
+}
