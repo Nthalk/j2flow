@@ -9,7 +9,9 @@ import com.nthalk.j2flow.api.J2FlowEndpoint;
 import com.nthalk.j2flow.service.Service;
 import com.nthalk.j2flow.service.ServiceMethod;
 import com.nthalk.j2flow.service.ServiceParameter;
-import com.nthalk.j2flow.service.ServiceParameter.Type;
+import com.nthalk.j2flow.service.ServiceParameter.ParamType;
+import com.nthalk.j2flow.service.Type;
+import com.nthalk.j2flow.service.TypeField;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -27,6 +29,8 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeMirror;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,6 +46,7 @@ public class FlowEndpointProcessor extends AbstractProcessor {
   private final Map<String, Element> classCache = new HashMap<>();
   private final List<Service> services = new ArrayList<>();
   private final PebbleEngine templateEngine;
+  Map<String, Type> typesByJavaType = new HashMap<>();
   private GenerationConfiguration configuration = new GenerationConfiguration();
 
   public FlowEndpointProcessor() {
@@ -90,14 +95,14 @@ public class FlowEndpointProcessor extends AbstractProcessor {
       for (Element enclosedElement : element.getEnclosedElements()) {
         if (enclosedElement instanceof ExecutableElement) {
           ExecutableElement method = (ExecutableElement) enclosedElement;
-          ServiceMethod serviceMethod = getServiceMethod(service, method);
+          ServiceMethod serviceMethod = getServiceMethod(method);
           if (serviceMethod == null) {
             continue;
           }
           for (VariableElement parameter : method.getParameters()) {
             addParameter(parameter, serviceMethod);
           }
-          serviceMethod.setReturnType(method.getReturnType().toString());
+          serviceMethod.setReturnType(getType(method.getReturnType()));
           service.add(serviceMethod);
         }
       }
@@ -114,11 +119,9 @@ public class FlowEndpointProcessor extends AbstractProcessor {
     File rootDir = new File(root);
     rootDir.mkdirs();
 
-    Set<String> types = new HashSet<>();
-
     // Output configured client
     PebbleTemplate clientJs = templateEngine.getTemplate("client.js");
-    try (FileWriter serviceWriter = new FileWriter(new File(rootDir, "client.js"));) {
+    try (FileWriter serviceWriter = new FileWriter(new File(rootDir, "client.js"))) {
       clientJs.evaluate(serviceWriter, new HashMap<String, Object>() {{
         put("configuration", configuration);
       }});
@@ -129,18 +132,8 @@ public class FlowEndpointProcessor extends AbstractProcessor {
     // Output all service files
     PebbleTemplate serviceJs = templateEngine.getTemplate("service.js");
     for (Service service : services) {
-      for (ServiceMethod method : service.getMethods()) {
-        types.add(method.getReturnType());
-        if (method.getBodyParameter() != null) {
-          types.add(method.getBodyParameter().getType());
-        }
-        for (ServiceParameter parameter : method.getParameters()) {
-          types.add(parameter.getType());
-        }
-      }
-
       String serviceName = service.getName();
-      try (FileWriter serviceWriter = new FileWriter(new File(rootDir, serviceName + ".js"));) {
+      try (FileWriter serviceWriter = new FileWriter(new File(rootDir, serviceName + ".js"))) {
         serviceJs.evaluate(serviceWriter, new HashMap<String, Object>() {{
           put("service", service);
         }});
@@ -151,7 +144,7 @@ public class FlowEndpointProcessor extends AbstractProcessor {
 
     // Output the index containing all services
     PebbleTemplate indexJs = templateEngine.getTemplate("index.js");
-    try (FileWriter serviceWriter = new FileWriter(new File(rootDir, "index.js"));) {
+    try (FileWriter serviceWriter = new FileWriter(new File(rootDir, "index.js"))) {
       indexJs.evaluate(serviceWriter, new HashMap<String, Object>() {{
         put("services", services);
       }});
@@ -161,11 +154,44 @@ public class FlowEndpointProcessor extends AbstractProcessor {
 
     // Output the types file
     PebbleTemplate typesJs = templateEngine.getTemplate("types.js");
-    for (String type : types) {
-      System.out.println(type);
+    try (FileWriter typesWriter = new FileWriter(new File(rootDir, "types.js"))) {
+      typesJs.evaluate(typesWriter, new HashMap<String, Object>() {{
+        put("types", typesByJavaType.values());
+      }});
+
+    } catch (IOException e) {
+      throw new RuntimeException("Could not write types file", e);
     }
 
     return true;
+  }
+
+  private Type getType(TypeMirror javaType) {
+    String javaTypeString = javaType.toString();
+    if (typesByJavaType.containsKey(javaTypeString)) {
+      return typesByJavaType.get(javaTypeString);
+    }
+    Type type = new Type(javaTypeString, configuration.getConvertedType(javaTypeString));
+    typesByJavaType.put(javaTypeString, type);
+    if (javaType instanceof DeclaredType && !javaTypeString.startsWith("java.lang")) {
+      DeclaredType declaredType = (DeclaredType) javaType;
+      Element element = declaredType.asElement();
+      for (Element enclosedElement : element.getEnclosedElements()) {
+        String elementName = enclosedElement.getSimpleName()
+            .toString();
+        if (enclosedElement instanceof ExecutableElement && elementName.startsWith("get")) {
+          ExecutableElement executableElement = (ExecutableElement) enclosedElement;
+          if (executableElement.getParameters().isEmpty()) {
+            String fieldName = elementName;
+            fieldName = fieldName.substring(3, 4).toLowerCase() + fieldName.substring(4);
+            type.getFields().add(new TypeField(fieldName,
+                getType((executableElement).getReturnType())));
+          }
+        }
+      }
+
+    }
+    return type;
   }
 
   private void indexElement(Element element) {
@@ -184,24 +210,31 @@ public class FlowEndpointProcessor extends AbstractProcessor {
   private void addParameter(VariableElement parameter, ServiceMethod method) {
     RequestParam requestParam = parameter.getAnnotation(RequestParam.class);
     if (requestParam != null) {
-      ServiceParameter methodParameter = new ServiceParameter(configuration,
-          requestParam.required(), parameter, Type.QUERY);
+      ServiceParameter methodParameter = new ServiceParameter(
+          getType(parameter.asType()),
+          parameter.getSimpleName().toString(),
+          requestParam.required(),
+          ParamType.QUERY);
       method.add(methodParameter);
       return;
     }
 
     RequestHeader requestHeader = parameter.getAnnotation(RequestHeader.class);
     if (requestHeader != null) {
-      ServiceParameter methodParameter = new ServiceParameter(configuration,
-          requestHeader.required(), parameter, Type.HEADER);
+      ServiceParameter methodParameter = new ServiceParameter(
+          getType(parameter.asType()),
+          parameter.getSimpleName().toString(),
+          requestHeader.required(), ParamType.HEADER);
       method.add(methodParameter);
       return;
     }
 
     PathVariable pathVariable = parameter.getAnnotation(PathVariable.class);
     if (pathVariable != null) {
-      ServiceParameter methodParameter = new ServiceParameter(configuration,
-          pathVariable.required(), parameter, Type.PATH);
+      ServiceParameter methodParameter = new ServiceParameter(
+          getType(parameter.asType()),
+          parameter.getSimpleName().toString(),
+          pathVariable.required(), ParamType.PATH);
       method.add(methodParameter);
       return;
     }
@@ -209,15 +242,16 @@ public class FlowEndpointProcessor extends AbstractProcessor {
     RequestBody requestBody = parameter.getAnnotation(RequestBody.class);
     if (requestBody != null) {
       ServiceParameter methodParameter = new ServiceParameter(
-          configuration, requestBody.required(),
-          parameter, Type.BODY);
+          getType(parameter.asType()),
+          parameter.getSimpleName().toString(),
+          requestBody.required(),
+          ParamType.BODY);
       method.setBodyParameter(methodParameter);
       return;
     }
   }
 
-  private ServiceMethod getServiceMethod(Service service,
-      Element enclosedElement) {
+  private ServiceMethod getServiceMethod(Element enclosedElement) {
     PostMapping postMapping = enclosedElement.getAnnotation(PostMapping.class);
     if (postMapping != null) {
       ServiceMethod methodMapping = new ServiceMethod();

@@ -1,8 +1,9 @@
 // @flow
-export class CorsConfiguration {
-  name: string;
+{% for type in types %}
+export type {{ type.flowType }} {|
+{% for field in type.fields %}
+  {{ field.name }}: {{ field.type.flowType }}{% if loop.last %}{% else %},{% endif %}
 
-  constructor(name: string) {
-    this.name = name;
-  }
-}
+{% endfor %}
+|}
+{% endfor %}

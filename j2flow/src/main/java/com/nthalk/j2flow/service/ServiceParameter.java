@@ -1,28 +1,21 @@
 package com.nthalk.j2flow.service;
 
-import com.nthalk.j2flow.GenerationConfiguration;
-import javax.lang.model.element.VariableElement;
-
 public class ServiceParameter {
 
-  private final GenerationConfiguration generationConfiguration;
   private final boolean required;
   private final String name;
-  private final String type;
-  private final Type paramType;
+  private final ParamType paramType;
+  private final Type type;
 
-  public ServiceParameter(GenerationConfiguration generationConfiguration,
-      boolean required, VariableElement sourceParam,
-      Type paramType) {
-    this.generationConfiguration = generationConfiguration;
+  public ServiceParameter(
+      Type type,
+      String name,
+      boolean required,
+      ParamType paramType) {
+    this.type = type;
+    this.name = name;
     this.required = required;
-    name = sourceParam.getSimpleName().toString();
-    type = sourceParam.asType().toString();
     this.paramType = paramType;
-  }
-
-  public String getConvertedType() {
-    return generationConfiguration.getConvertedType(getType());
   }
 
   public boolean getRequired() {
@@ -33,15 +26,15 @@ public class ServiceParameter {
     return name;
   }
 
-  public String getType() {
+  public Type getType() {
     return type;
   }
 
-  public Type getParamType() {
+  public ParamType getParamType() {
     return paramType;
   }
 
-  public enum Type {
+  public enum ParamType {
     PATH,
     HEADER,
     BODY,

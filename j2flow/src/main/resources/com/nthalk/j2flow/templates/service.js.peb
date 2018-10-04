@@ -12,7 +12,7 @@ export default class {{ service.name }} {
 {% for method in service.methods %}
   async {{ method.name }}(
 {% for parameter in method.parameters %}
-      {{ parameter.name }}: {{ parameter.convertedType }}{% if loop.last %}{% else %},{% endif %}
+      {{ parameter.name }}: {{ parameter.type.flowType }}{% if loop.last %}{% else %},{% endif %}
 
 {% endfor %}
   ) {

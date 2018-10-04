@@ -14,7 +14,7 @@ public class ServiceMethod {
   private String producesMimeType;
   private String path;
   private RequestMethod method;
-  private String returnType;
+  private Type returnType;
   private String name;
   private ServiceParameter bodyParameter;
 
@@ -87,11 +87,11 @@ public class ServiceMethod {
     this.method = method;
   }
 
-  public String getReturnType() {
+  public Type getReturnType() {
     return returnType;
   }
 
-  public void setReturnType(String returnType) {
+  public void setReturnType(Type returnType) {
     this.returnType = returnType;
   }
 
